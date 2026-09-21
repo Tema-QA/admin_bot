@@ -381,22 +381,12 @@ async def publish_now(callback: CallbackQuery):
         )
         return
 
-    text = post["text"]
-
-    if post["disclaimer"]:
-        text += f"\n\n⚕️ {post['disclaimer']}"
-
-    import json
-
-    hashtags = json.loads(post["hashtags"])
-
-    if hashtags:
-        text += "\n\n" + " ".join(hashtags)
+    formatted_post = format_post(post)
 
     try:
         sent_message = await bot.send_message(
             chat_id=target_chat_id,
-            text=f"**{post['title']}**\n\n{text}",
+            text=formatted_post,
             parse_mode="Markdown",
         )
 

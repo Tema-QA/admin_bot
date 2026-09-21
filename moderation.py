@@ -1,5 +1,10 @@
 import json
-import re
+
+
+MEDICAL_DISCLAIMER = (
+    "Информация предоставлена в образовательных целях и не заменяет "
+    "профессиональную медицинскую консультацию."
+)
 
 
 def validate_post(post: dict, settings: dict) -> tuple[bool, str]:
@@ -18,42 +23,13 @@ def validate_post(post: dict, settings: dict) -> tuple[bool, str]:
     if len(text) > 5000:
         return False, "Текст слишком длинный."
 
-    forbidden_raw = settings.get("forbidden_topics", "")
-    forbidden_topics = [
-        item.strip().lower()
-        for item in forbidden_raw.split(",")
-        if item.strip()
-    ]
-
-    combined = f"{title}\n{text}".lower()
-
-    for topic in forbidden_topics:
-        if topic in combined:
-            return False, f"Обнаружена запрещённая тема: {topic}"
-
-    risky_phrases = [
-        "гарантированно вылечит",
-        "заменяет врача",
-        "отмените препарат",
-        "не обращайтесь к врачу",
-        "точно избавит",
-    ]
-
-    for phrase in risky_phrases:
-        if phrase in combined:
-            return False, f"Обнаружена рискованная формулировка: {phrase}"
-
     hashtags = post.get("hashtags", [])
 
     if not isinstance(hashtags, list):
         return False, "Хэштеги имеют неправильный формат."
 
-    if len(hashtags) < 3 or len(hashtags) > 5:
-        return False, "Должно быть от 3 до 5 хэштегов."
-
-    for hashtag in hashtags:
-        if not re.fullmatch(r"#[A-Za-zА-Яа-яЁё0-9_]+", str(hashtag)):
-            return False, f"Некорректный хэштег: {hashtag}"
+    if len(hashtags) > 5:
+        return False, "Слишком много хэштегов: максимум 5."
 
     return True, "Проверка пройдена."
 
@@ -85,5 +61,7 @@ def format_post(post: dict) -> str:
 
     if hashtag_text:
         result += f"\n\n{hashtag_text}"
+
+    result += f"\n\n⚕️ {MEDICAL_DISCLAIMER}"
 
     return result

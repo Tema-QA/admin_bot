@@ -1,5 +1,7 @@
 from datetime import datetime, timezone
 
+from moderation import format_post
+
 
 async def publish_due_posts(
     database,
@@ -23,22 +25,10 @@ async def publish_due_posts(
             )
             continue
 
-        hashtags = post.get("hashtags", "")
-        text = post["text"]
-
-        if hashtags:
-            import json
-
-            hashtag_list = json.loads(hashtags)
-            text += "\n\n" + " ".join(hashtag_list)
-
-        if post.get("disclaimer"):
-            text += f"\n\n⚕️ {post['disclaimer']}"
-
         try:
             sent_message = await bot.send_message(
                 chat_id=target_chat_id,
-                text=f"**{post['title']}**\n\n{text}",
+                text=format_post(post),
                 parse_mode="Markdown",
             )
 
