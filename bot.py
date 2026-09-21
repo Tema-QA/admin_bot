@@ -1,4 +1,5 @@
 import asyncio
+import random
 from datetime import datetime, timedelta, timezone
 
 from aiohttp import web
@@ -39,6 +40,22 @@ generator = YandexGPTGenerator(
 
 SAMARA_TZ = timezone(timedelta(hours=4))
 
+EXAMPLE_TOPICS = (
+    "Как восстановить режим сна после отпуска",
+    "Какие анализы действительно нужны для профилактики",
+    "Как распознать признаки обезвоживания летом",
+    "Что помогает снизить количество соли в рационе",
+    "Почему важна регулярная физическая активность",
+    "Как подготовиться к приёму врача и ничего не забыть",
+    "Зачем измерять артериальное давление дома",
+    "Как поддерживать здоровье глаз при работе за экраном",
+    "Что учитывать при выборе полезного перекуса",
+    "Как стресс влияет на сон и самочувствие",
+    "Почему нельзя игнорировать длительную усталость",
+    "Как безопасно возвращаться к тренировкам после перерыва",
+)
+last_example_topics: tuple[str, ...] = ()
+
 
 class Form(StatesGroup):
     waiting_topic = State()
@@ -50,6 +67,19 @@ class Form(StatesGroup):
 
 def is_admin(user_id: int) -> bool:
     return user_id in settings.admin_ids
+
+
+def get_example_topics() -> tuple[str, ...]:
+    global last_example_topics
+
+    available_topics = list(EXAMPLE_TOPICS)
+    example_topics = tuple(random.sample(available_topics, 3))
+
+    while example_topics == last_example_topics:
+        example_topics = tuple(random.sample(available_topics, 3))
+
+    last_example_topics = example_topics
+    return example_topics
 
 
 def parse_schedule(value: str) -> str:
@@ -98,12 +128,14 @@ async def create_post_start(
 
     await state.set_state(Form.waiting_topic)
 
+    example_topics = get_example_topics()
+
     await message.answer(
         "📝 Напишите тему поста.\n\n"
         "Например:\n"
-        "• Почему после еды хочется спать\n"
-        "• Как подготовиться к диспансеризации\n"
-        "• Нужно ли пить воду во время тренировки\n\n"
+        f"• {example_topics[0]}\n"
+        f"• {example_topics[1]}\n"
+        f"• {example_topics[2]}\n\n"
         "Если хотите, чтобы тему выбрала нейросеть, отправьте:\n"
         "`автоматически`",
         reply_markup=cancel_keyboard(),
@@ -564,16 +596,20 @@ async def schedule_post_save(
         )
         return
 
+    scheduled_utc = scheduled.replace(
+        tzinfo=SAMARA_TZ,
+    ).astimezone(timezone.utc).replace(tzinfo=None)
+
     database.set_status(
         post_id,
         "scheduled",
-        scheduled_at=scheduled.isoformat(),
+        scheduled_at=scheduled_utc.isoformat(),
     )
 
     await state.clear()
 
     await message.answer(
-        f"⏰ Пост запланирован на UTC: `{value}`.\n\n"
+        f"⏰ Пост запланирован на местное время (UTC+4): `{value}`.\n\n"
         "Внешний cron проверит очередь и опубликует его.",
         reply_markup=main_keyboard(),
         parse_mode="Markdown",
@@ -661,6 +697,7 @@ def create_app() -> web.Application:
     app.router.add_get("/", health_handler)
     app.router.add_get("/health", health_handler)
     app.router.add_get("/cron/publish", cron_publish_handler)
+    app.router.add_post("/cron/publish", cron_publish_handler)
 
     webhook_handler = SimpleRequestHandler(
         dispatcher=dp,

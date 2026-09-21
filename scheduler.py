@@ -1,6 +1,10 @@
+import logging
 from datetime import datetime, timezone
 
 from moderation import format_post
+
+
+logger = logging.getLogger(__name__)
 
 
 async def publish_due_posts(
@@ -41,6 +45,10 @@ async def publish_due_posts(
             published_ids.append(post["id"])
 
         except Exception:
+            logger.exception(
+                "Не удалось опубликовать запланированный пост %s",
+                post["id"],
+            )
             database.set_status(
                 post["id"],
                 "error",
