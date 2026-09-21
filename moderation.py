@@ -49,6 +49,9 @@ def format_post(post: dict) -> str:
     if not isinstance(hashtags, list):
         hashtags = []
 
+    text = text.replace(MEDICAL_DISCLAIMER, "").strip()
+    disclaimer = disclaimer.replace(MEDICAL_DISCLAIMER, "").strip(" .\n")
+
     hashtag_text = " ".join(
         tag if str(tag).startswith("#") else f"#{tag}"
         for tag in hashtags
@@ -56,11 +59,11 @@ def format_post(post: dict) -> str:
 
     result = f"**{title}**\n\n{text}"
 
-    if disclaimer:
-        result += f"\n\n⚕️ {disclaimer}"
-
     if hashtag_text:
         result += f"\n\n{hashtag_text}"
+
+    if disclaimer:
+        result += f"\n\n⚠️ {disclaimer}"
 
     result += f"\n\n⚕️ {MEDICAL_DISCLAIMER}"
 
