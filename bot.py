@@ -361,7 +361,7 @@ async def save_chat_id(
 
 @dp.callback_query(F.data.startswith("post:publish:"))
 async def publish_now(callback: CallbackQuery):
-    post_id = int(callback.data.rsplit(":", 1))[1]
+    post_id = int(callback.data.rsplit(":", 1)[1])
     post = database.get_post(post_id)
 
     if not post or post["admin_id"] != callback.from_user.id:
@@ -423,7 +423,7 @@ async def edit_post_start(
     callback: CallbackQuery,
     state: FSMContext,
 ):
-    post_id = int(callback.data.rsplit(":", 1))[1]
+    post_id = int(callback.data.rsplit(":", 1)[1])
     post = database.get_post(post_id)
 
     if not post or post["admin_id"] != callback.from_user.id:
@@ -471,7 +471,7 @@ async def edit_post_save(
 async def regenerate_post(
     callback: CallbackQuery,
 ):
-    post_id = int(callback.data.rsplit(":", 1))[1]
+    post_id = int(callback.data.rsplit(":", 1)[1])
     post = database.get_post(post_id)
 
     if not post or post["admin_id"] != callback.from_user.id:
@@ -531,7 +531,7 @@ async def schedule_post_start(
     callback: CallbackQuery,
     state: FSMContext,
 ):
-    post_id = int(callback.data.rsplit(":", 1))[1]
+    post_id = int(callback.data.rsplit(":", 1)[1])
     post = database.get_post(post_id)
 
     if not post or post["admin_id"] != callback.from_user.id:
@@ -592,7 +592,7 @@ async def schedule_post_save(
 
 @dp.callback_query(F.data.startswith("post:reject:"))
 async def reject_post(callback: CallbackQuery):
-    post_id = int(callback.data.rsplit(":", 1))[1]
+    post_id = int(callback.data.rsplit(":", 1)[1])
     post = database.get_post(post_id)
 
     if not post or post["admin_id"] != callback.from_user.id:
