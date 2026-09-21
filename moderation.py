@@ -1,3 +1,4 @@
+import json
 import re
 
 
@@ -62,6 +63,15 @@ def format_post(post: dict) -> str:
     text = str(post.get("text", "")).strip()
     disclaimer = str(post.get("disclaimer", "")).strip()
     hashtags = post.get("hashtags", [])
+
+    if isinstance(hashtags, str):
+        try:
+            hashtags = json.loads(hashtags)
+        except json.JSONDecodeError:
+            hashtags = []
+
+    if not isinstance(hashtags, list):
+        hashtags = []
 
     hashtag_text = " ".join(
         tag if str(tag).startswith("#") else f"#{tag}"
