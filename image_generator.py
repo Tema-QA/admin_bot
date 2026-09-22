@@ -7,24 +7,61 @@ import re
 import aiohttp
 
 
-INFOGRAPHIC_STYLE_BASE = """
-Minimalist flat vector infographic for a Russian health Telegram channel.
-Portrait orientation, clean white or very light background.
-Soft pastel accents (mint green, sage green, or light blue — match variant).
-Rounded white cards in rows, each with a simple flat icon on the left and Russian text on the right.
-Large bold Russian title at the top, optional short subtitle.
-3–5 list items or checklist steps with numbers or checkboxes.
-Small decorative leaves or water drops in corners.
-Footer hashtag #здоровье_просто in green.
-No photorealism, no 3D, no clutter, no English text.
-Professional medical lifestyle education aesthetic, readable typography.
-"""
+YANDEX_ART_PROMPT_MAX_LEN = 500
+
+INFOGRAPHIC_STYLE_BASE = (
+    "Flat health infographic, portrait, white bg, rounded cards, "
+    "icons, Russian text, checklist, #здоровье_просто, no photo."
+)
 
 STYLE_VARIANTS = (
-    "Color accent: light blue and cyan, water-drop decorations, wellness hydration theme.",
-    "Color accent: sage and mint green, leaf branch decorations, natural ZOZH theme.",
-    "Color accent: soft green with warm yellow sun icon, morning checklist mood.",
+    "Blue-cyan, water drops.",
+    "Mint-green, leaves.",
+    "Soft green, sun icon.",
 )
+
+
+def _shorten(text: str, limit: int) -> str:
+    value = " ".join(str(text).split())
+
+    if len(value) <= limit:
+        return value
+
+    if limit <= 1:
+        return value[:limit]
+
+    return value[: limit - 1].rstrip() + "…"
+
+
+def _fit_art_prompt(prompt: str, max_len: int = YANDEX_ART_PROMPT_MAX_LEN) -> str:
+    compact = " ".join(prompt.split())
+
+    if len(compact) <= max_len:
+        return compact
+
+    return compact[: max_len - 1].rstrip() + "…"
+
+
+def normalize_brief_for_art(brief: dict) -> dict:
+    items = brief.get("items", [])
+
+    if not isinstance(items, list):
+        items = []
+
+    normalized_items = []
+
+    for item in items[:3]:
+        text = _shorten(str(item).strip(), 28)
+
+        if text:
+            normalized_items.append(text)
+
+    return {
+        "title": _shorten(brief.get("title", ""), 42),
+        "subtitle": _shorten(brief.get("subtitle", ""), 32),
+        "items": normalized_items,
+        "footer": "#здоровье_просто",
+    }
 
 
 class YandexArtGenerator:
@@ -61,6 +98,8 @@ class YandexArtGenerator:
     ) -> bytes:
         if seed is None:
             seed = random.randint(1, 2_000_000_000)
+
+        prompt = _fit_art_prompt(prompt)
 
         payload = {
             "modelUri": f"art://{self.folder_id}/{self.model}",
@@ -164,40 +203,23 @@ class YandexArtGenerator:
 
 
 def build_art_prompts(brief: dict) -> list[str]:
-    title = str(brief.get("title", "")).strip()
-    subtitle = str(brief.get("subtitle", "")).strip()
-    items = brief.get("items", [])
-    footer = str(brief.get("footer", "#здоровье_просто")).strip()
+    normalized = normalize_brief_for_art(brief)
+    title = normalized["title"]
+    subtitle = normalized["subtitle"]
+    items = normalized["items"]
+    footer = normalized["footer"]
 
-    if not isinstance(items, list):
-        items = []
-
-    item_lines = []
-
-    for index, item in enumerate(items[:5], start=1):
-        text = str(item).strip()
-
-        if text:
-            item_lines.append(f"{index}. {text}")
-
-    items_block = "\n".join(item_lines)
-
-    content_block = f"""
-Title (Russian, large bold): {title}
-Subtitle (Russian): {subtitle}
-List items (Russian):
-{items_block}
-Footer hashtag: {footer}
-""".strip()
+    items_text = "; ".join(items) if items else "краткий список советов"
 
     prompts = []
 
     for variant in STYLE_VARIANTS:
-        prompts.append(
-            f"{INFOGRAPHIC_STYLE_BASE.strip()}\n\n"
-            f"{variant}\n\n"
-            f"Infographic content:\n{content_block}"
+        prompt = (
+            f"{INFOGRAPHIC_STYLE_BASE} {variant} "
+            f"Title: {title}. Subtitle: {subtitle}. "
+            f"Points: {items_text}. Footer: {footer}."
         )
+        prompts.append(_fit_art_prompt(prompt))
 
     return prompts
 
@@ -221,8 +243,9 @@ async def build_infographic_brief(
     )
 
     prompt = f"""
-По тексту поста для Telegram-канала о здоровье подготовь краткое ТЗ на инфографику.
-Текст должен поместиться на одной вертикальной картинке: только заголовок, подзаголовок и 3–5 коротких пунктов.
+По тексту поста подготовь ТЗ на инфографику для генератора картинок.
+Лимит текста на изображении жёсткий: заголовок до 40 символов, подзаголовок до 30,
+ровно 3 пункта, каждый до 25 символов, без длинных слов.
 
 Заголовок поста: {title}
 Текст поста:
@@ -230,8 +253,8 @@ async def build_infographic_brief(
 
 Верни только JSON:
 {{
-  "title": "короткий заголовок на русском для картинки",
-  "subtitle": "одна короткая строка на русском",
+  "title": "до 40 символов",
+  "subtitle": "до 30 символов",
   "items": ["пункт 1", "пункт 2", "пункт 3"],
   "footer": "{hashtag_text or '#здоровье_просто'}"
 }}
@@ -323,6 +346,6 @@ async def build_infographic_brief(
             line.strip(" ☐•-\t")
             for line in text.splitlines()
             if line.strip()
-        ][:4]
+        ][:3]
 
-    return brief
+    return normalize_brief_for_art(brief)
