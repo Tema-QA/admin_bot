@@ -29,8 +29,8 @@ def post_actions_keyboard(post_id: int) -> InlineKeyboardMarkup:
         inline_keyboard=[
             [
                 InlineKeyboardButton(
-                    text="✅ Опубликовать",
-                    callback_data=f"post:publish:{post_id}",
+                    text="✅ Одобрить черновик",
+                    callback_data=f"post:approve:{post_id}",
                 )
             ],
             [
@@ -45,15 +45,75 @@ def post_actions_keyboard(post_id: int) -> InlineKeyboardMarkup:
             ],
             [
                 InlineKeyboardButton(
-                    text="⏰ Запланировать",
-                    callback_data=f"post:schedule:{post_id}",
+                    text="❌ Отклонить",
+                    callback_data=f"post:reject:{post_id}",
+                )
+            ],
+        ]
+    )
+
+
+def image_variant_keyboard(post_id: int) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="1️⃣",
+                    callback_data=f"post:image:{post_id}:0",
+                ),
+                InlineKeyboardButton(
+                    text="2️⃣",
+                    callback_data=f"post:image:{post_id}:1",
+                ),
+                InlineKeyboardButton(
+                    text="3️⃣",
+                    callback_data=f"post:image:{post_id}:2",
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    text="🔄 Другие варианты",
+                    callback_data=f"post:regenerate_images:{post_id}",
                 )
             ],
             [
                 InlineKeyboardButton(
+                    text="❌ Отменить",
+                    callback_data="cancel",
+                )
+            ],
+        ]
+    )
+
+
+def final_post_actions_keyboard(post_id: int) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="✅ Опубликовать",
+                    callback_data=f"post:publish:{post_id}",
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    text="⏰ Запланировать",
+                    callback_data=f"post:schedule:{post_id}",
+                ),
+                InlineKeyboardButton(
+                    text="🖼 Другие изображения",
+                    callback_data=f"post:regenerate_images:{post_id}",
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    text="✏️ Изменить текст",
+                    callback_data=f"post:edit:{post_id}",
+                ),
+                InlineKeyboardButton(
                     text="❌ Отклонить",
                     callback_data=f"post:reject:{post_id}",
-                )
+                ),
             ],
         ]
     )

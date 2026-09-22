@@ -1,7 +1,7 @@
 import logging
 from datetime import datetime, timezone
 
-from moderation import format_post
+from publisher import publish_post_message
 
 
 logger = logging.getLogger(__name__)
@@ -30,10 +30,10 @@ async def publish_due_posts(
             continue
 
         try:
-            sent_message = await bot.send_message(
-                chat_id=target_chat_id,
-                text=format_post(post),
-                parse_mode="Markdown",
+            sent_message = await publish_post_message(
+                bot,
+                target_chat_id,
+                post,
             )
 
             database.set_status(

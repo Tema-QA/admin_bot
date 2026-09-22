@@ -8,7 +8,12 @@ from aiogram.filters import CommandStart
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.storage.memory import MemoryStorage
-from aiogram.types import CallbackQuery, Message
+from aiogram.types import (
+    BufferedInputFile,
+    CallbackQuery,
+    InputMediaPhoto,
+    Message,
+)
 from aiogram.webhook.aiohttp_server import (
     SimpleRequestHandler,
     setup_application,
@@ -17,14 +22,22 @@ from aiogram.webhook.aiohttp_server import (
 from ai_generator import YandexGPTGenerator
 from config import settings
 from database import Database
+from image_generator import (
+    YandexArtGenerator,
+    build_art_prompts,
+    build_infographic_brief,
+)
 from keyboards import (
     cancel_keyboard,
     chat_type_keyboard,
+    final_post_actions_keyboard,
+    image_variant_keyboard,
     main_keyboard,
     post_actions_keyboard,
     settings_keyboard,
 )
 from moderation import format_post, validate_post
+from publisher import publish_post_message
 from scheduler import publish_due_posts
 
 
@@ -36,6 +49,12 @@ generator = YandexGPTGenerator(
     api_key=settings.yandex_api_key,
     folder_id=settings.yandex_folder_id,
     model=settings.yandex_model,
+)
+
+art_generator = YandexArtGenerator(
+    api_key=settings.yandex_api_key,
+    folder_id=settings.yandex_folder_id,
+    model=settings.yandex_art_model,
 )
 
 SAMARA_TZ = timezone(timedelta(hours=4))
@@ -82,6 +101,47 @@ def get_example_topics() -> tuple[str, ...]:
     return example_topics
 
 
+async def generate_post_images(
+    post: dict,
+) -> list[bytes]:
+    brief = await build_infographic_brief(
+        generator,
+        post,
+    )
+    prompts = build_art_prompts(brief)
+
+    return await art_generator.generate_variants(prompts)
+
+
+async def send_image_variants(
+    chat_id: int,
+    post_id: int,
+    images: list[bytes],
+) -> list[str]:
+    media_group = [
+        InputMediaPhoto(
+            media=BufferedInputFile(
+                image,
+                filename=f"post_{post_id}_variant_{index + 1}.jpg",
+            ),
+        )
+        for index, image in enumerate(images)
+    ]
+
+    messages = await bot.send_media_group(
+        chat_id=chat_id,
+        media=media_group,
+    )
+
+    file_ids = []
+
+    for message in messages:
+        if message.photo:
+            file_ids.append(message.photo[-1].file_id)
+
+    return file_ids
+
+
 def parse_schedule(value: str) -> str:
     value = value.strip()
 
@@ -111,8 +171,8 @@ async def start_command(
 
     await message.answer(
         "👋 **Контент-менеджер запущен!**\n\n"
-        "Я помогу создать пост, показать его на проверку, "
-        "опубликовать сразу или поставить в очередь.",
+        "Я помогу создать пост, сгенерировать инфографику, "
+        "показать итог на проверку, опубликовать или поставить в очередь.",
         reply_markup=main_keyboard(),
         parse_mode="Markdown",
     )
@@ -391,6 +451,163 @@ async def save_chat_id(
     )
 
 
+@dp.callback_query(F.data.startswith("post:approve:"))
+async def approve_draft(
+    callback: CallbackQuery,
+    state: FSMContext,
+):
+    post_id = int(callback.data.rsplit(":", 1)[1])
+    post = database.get_post(post_id)
+
+    if not post or post["admin_id"] != callback.from_user.id:
+        await callback.answer("Пост не найден.", show_alert=True)
+        return
+
+    await callback.answer("Генерирую инфографику…")
+
+    await callback.message.edit_text(
+        f"🎨 **Черновик №{post_id} одобрен.**\n\n"
+        "Создаю 3 варианта изображения. "
+        "Это может занять 1–3 минуты…",
+        parse_mode="Markdown",
+    )
+
+    try:
+        images = await generate_post_images(post)
+        file_ids = await send_image_variants(
+            callback.from_user.id,
+            post_id,
+            images,
+        )
+
+        await state.update_data(
+            image_variant_file_ids=file_ids,
+            image_variant_post_id=post_id,
+        )
+
+        await bot.send_message(
+            chat_id=callback.from_user.id,
+            text=(
+                f"🖼 **Варианты изображения для поста №{post_id}**\n\n"
+                "Выберите номер варианта:"
+            ),
+            reply_markup=image_variant_keyboard(post_id),
+            parse_mode="Markdown",
+        )
+
+    except Exception as error:
+        await bot.send_message(
+            chat_id=callback.from_user.id,
+            text=(
+                "❌ Не удалось сгенерировать изображения.\n\n"
+                f"`{str(error)[:500]}`"
+            ),
+            reply_markup=post_actions_keyboard(post_id),
+            parse_mode="Markdown",
+        )
+
+
+@dp.callback_query(F.data.startswith("post:regenerate_images:"))
+async def regenerate_images(
+    callback: CallbackQuery,
+    state: FSMContext,
+):
+    post_id = int(callback.data.rsplit(":", 1)[1])
+    post = database.get_post(post_id)
+
+    if not post or post["admin_id"] != callback.from_user.id:
+        await callback.answer("Пост не найден.", show_alert=True)
+        return
+
+    await callback.answer("Генерирую новые варианты…")
+
+    status_message = await callback.message.answer(
+        "🎨 Создаю новые варианты инфографики…"
+    )
+
+    try:
+        images = await generate_post_images(post)
+        file_ids = await send_image_variants(
+            callback.from_user.id,
+            post_id,
+            images,
+        )
+
+        await state.update_data(
+            image_variant_file_ids=file_ids,
+            image_variant_post_id=post_id,
+        )
+
+        await status_message.edit_text(
+            f"🖼 **Новые варианты для поста №{post_id}**\n\n"
+            "Выберите номер варианта:",
+            reply_markup=image_variant_keyboard(post_id),
+            parse_mode="Markdown",
+        )
+
+    except Exception as error:
+        await status_message.edit_text(
+            "❌ Не удалось сгенерировать изображения.\n\n"
+            f"`{str(error)[:500]}`",
+            parse_mode="Markdown",
+        )
+
+
+@dp.callback_query(F.data.startswith("post:image:"))
+async def select_image_variant(
+    callback: CallbackQuery,
+    state: FSMContext,
+):
+    parts = callback.data.split(":")
+    post_id = int(parts[2])
+    variant_index = int(parts[3])
+    post = database.get_post(post_id)
+
+    if not post or post["admin_id"] != callback.from_user.id:
+        await callback.answer("Пост не найден.", show_alert=True)
+        return
+
+    data = await state.get_data()
+    file_ids = data.get("image_variant_file_ids") or []
+    stored_post_id = data.get("image_variant_post_id")
+
+    if stored_post_id != post_id or variant_index >= len(file_ids):
+        await callback.answer(
+            "Варианты устарели. Запросите генерацию заново.",
+            show_alert=True,
+        )
+        return
+
+    image_file_id = file_ids[variant_index]
+    database.set_post_image(post_id, image_file_id)
+
+    await callback.answer("Вариант сохранён.")
+
+    formatted = format_post(post)
+
+    if len(formatted) <= 1024:
+        await callback.message.answer_photo(
+            photo=image_file_id,
+            caption=(
+                f"📋 **Итоговая версия поста №{post_id}**\n\n"
+                f"{formatted}"
+            ),
+            reply_markup=final_post_actions_keyboard(post_id),
+            parse_mode="Markdown",
+        )
+    else:
+        await callback.message.answer_photo(
+            photo=image_file_id,
+            caption=f"📋 **Итоговая версия поста №{post_id}**",
+            parse_mode="Markdown",
+        )
+        await callback.message.answer(
+            formatted,
+            reply_markup=final_post_actions_keyboard(post_id),
+            parse_mode="Markdown",
+        )
+
+
 @dp.callback_query(F.data.startswith("post:publish:"))
 async def publish_now(callback: CallbackQuery):
     post_id = int(callback.data.rsplit(":", 1)[1])
@@ -399,6 +616,13 @@ async def publish_now(callback: CallbackQuery):
     if not post or post["admin_id"] != callback.from_user.id:
         await callback.answer(
             "Пост не найден.",
+            show_alert=True,
+        )
+        return
+
+    if not str(post.get("image_file_id") or "").strip():
+        await callback.answer(
+            "Сначала одобрите черновик и выберите изображение.",
             show_alert=True,
         )
         return
@@ -413,13 +637,11 @@ async def publish_now(callback: CallbackQuery):
         )
         return
 
-    formatted_post = format_post(post)
-
     try:
-        sent_message = await bot.send_message(
-            chat_id=target_chat_id,
-            text=formatted_post,
-            parse_mode="Markdown",
+        sent_message = await publish_post_message(
+            bot,
+            target_chat_id,
+            post,
         )
 
         database.set_status(
@@ -428,10 +650,13 @@ async def publish_now(callback: CallbackQuery):
             published_message_id=sent_message.message_id,
         )
 
-        await callback.message.edit_text(
-            "✅ Пост опубликован в канале."
-        )
+        await callback.message.edit_reply_markup(reply_markup=None)
         await callback.answer("Опубликовано.")
+
+        await callback.message.answer(
+            "✅ Пост с изображением опубликован в канале.",
+            reply_markup=main_keyboard(),
+        )
 
     except Exception as error:
         await callback.answer(
@@ -455,9 +680,10 @@ async def edit_post_start(
     await state.update_data(edit_post_id=post_id)
     await state.set_state(Form.waiting_edit_text)
 
-    await callback.message.edit_text(
+    await callback.message.answer(
         "✏️ Отправьте новый текст поста одним сообщением.\n\n"
-        "Заголовок и хэштеги останутся прежними.",
+        "Заголовок и хэштеги останутся прежними. "
+        "После правки нужно снова выбрать изображение.",
         reply_markup=cancel_keyboard(),
     )
 
@@ -560,10 +786,17 @@ async def schedule_post_start(
         await callback.answer("Пост не найден.", show_alert=True)
         return
 
+    if not str(post.get("image_file_id") or "").strip():
+        await callback.answer(
+            "Сначала выберите изображение для поста.",
+            show_alert=True,
+        )
+        return
+
     await state.update_data(schedule_post_id=post_id)
     await state.set_state(Form.waiting_schedule)
 
-    await callback.message.edit_text(
+    await callback.message.answer(
         "⏰ Введите дату и время публикации:\n\n"
         "`2026-09-21 08:30`\n\n",
         reply_markup=cancel_keyboard(),

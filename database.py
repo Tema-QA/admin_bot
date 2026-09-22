@@ -42,9 +42,28 @@ class Database:
                     status TEXT NOT NULL DEFAULT 'draft',
                     scheduled_at TEXT,
                     published_message_id INTEGER,
+                    image_file_id TEXT NOT NULL DEFAULT '',
                     created_at TEXT NOT NULL,
                     updated_at TEXT NOT NULL
                 );
+                """
+            )
+
+            self._ensure_post_columns(connection)
+
+    def _ensure_post_columns(self, connection):
+        columns = {
+            row[1]
+            for row in connection.execute(
+                "PRAGMA table_info(posts)"
+            ).fetchall()
+        }
+
+        if "image_file_id" not in columns:
+            connection.execute(
+                """
+                ALTER TABLE posts
+                ADD COLUMN image_file_id TEXT NOT NULL DEFAULT ''
                 """
             )
 
@@ -188,7 +207,10 @@ class Database:
             connection.execute(
                 """
                 UPDATE posts
-                SET text = ?, updated_at = ?
+                SET
+                    text = ?,
+                    image_file_id = '',
+                    updated_at = ?
                 WHERE id = ?
                 """,
                 (
@@ -197,6 +219,30 @@ class Database:
                     post_id,
                 ),
             )
+
+    def set_post_image(
+        self,
+        post_id: int,
+        image_file_id: str,
+    ):
+        with self.connect() as connection:
+            connection.execute(
+                """
+                UPDATE posts
+                SET
+                    image_file_id = ?,
+                    updated_at = ?
+                WHERE id = ?
+                """,
+                (
+                    image_file_id,
+                    datetime.utcnow().isoformat(),
+                    post_id,
+                ),
+            )
+
+    def clear_post_image(self, post_id: int):
+        self.set_post_image(post_id, "")
 
     def update_post(
         self,
@@ -215,6 +261,7 @@ class Database:
                     text = ?,
                     hashtags = ?,
                     disclaimer = ?,
+                    image_file_id = '',
                     updated_at = ?
                 WHERE id = ?
                 """,

@@ -14,6 +14,7 @@ class Settings:
     yandex_api_key: str
     yandex_folder_id: str
     yandex_model: str
+    yandex_art_model: str
     webhook_base_url: str
     webhook_secret: str
     cron_secret: str
@@ -78,6 +79,10 @@ def load_settings() -> Settings:
         yandex_model=os.getenv(
             "YANDEX_GPT_MODEL",
             "yandexgpt-lite",
+        ).strip(),
+        yandex_art_model=os.getenv(
+            "YANDEX_ART_MODEL",
+            "yandex-art/latest",
         ).strip(),
         webhook_base_url=webhook_base_url,
         webhook_secret=webhook_secret,
