@@ -564,9 +564,8 @@ async def schedule_post_start(
     await state.set_state(Form.waiting_schedule)
 
     await callback.message.edit_text(
-        "⏰ Введите дату и время публикации по UTC:\n\n"
-        "`2026-09-21 08:30`\n\n"
-        "Для вашего часового пояса UTC+4 это будет 12:30.",
+        "⏰ Введите дату и время публикации:\n\n"
+        "`2026-09-21 08:30`\n\n",
         reply_markup=cancel_keyboard(),
         parse_mode="Markdown",
     )
